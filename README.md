@@ -16,9 +16,18 @@ The reason for the crash and burn in 2018 was that I got a little too cute and m
 
 ## Updated Approach  
 In addition to re-creating team-based efficiency stats like [Ken Pom](https://kenpom.com/), things like depth (average class ranking or games played per player weighted by playing time?) and injuries could also be figured into play.
+  * Definitely add more regular season features (https://www.kaggle.com/toshimelonhead/ncaa-march-madness-sabermetric-spin/notebook)
+  * Conference (categorical variable)
+  * Quad 1 Wins
+  * Quad 4 Losses
+  * Manual Adjustments??
+Also look at this solution:
+https://www.kaggle.com/prashantkikani/ncaam-2021-diverse-model-ensemble
 
 ### Phase 1 Results Log
 Very simple logistic regression for both Men's and Women's tournaments only using KenPom rankings and seeds for Men's and seeds for Women's.
 
 men's score: 0.56336 (289/313)
+  * Submission 2: 0.55792
 women's score: 0.45374 (162/186)
+  * Submission 2: 0.45000
