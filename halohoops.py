@@ -7,7 +7,7 @@ Tasks to be performed utilizing the class:
 - generate prediction .csv for submittal
 
 """
-
+from hh_util import generate_metrics
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -94,6 +94,7 @@ class haloHoops:
         else:
             o_seasons = list(self.data['seeds']['Season'].unique())
             test_cols = ['ID', 'Season', 't1_id', 't2_id', 't1_seed', 't2_seed']
+        self.df_metrics, self.df_feat = generate_metrics(self.data['reg_results'])
         print("Data Loaded successfully.")
 
         print("Generating training data frame.")
@@ -143,6 +144,7 @@ class haloHoops:
                                            left_on=['Season', 'TeamID_2'],
                                            right_on=['Season', 'TeamID'],
                                            how='left')['GapAvg']
+
         # trim down further if in phase 1 of comp.
         if self.phase == 1:
             df_train = df_train[df_train['Season'] < 2016]
