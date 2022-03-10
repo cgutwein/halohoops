@@ -7,7 +7,7 @@ Tasks to be performed utilizing the class:
 - generate prediction .csv for submittal
 
 """
-from hh_util import generate_metrics
+from hh_util import generate_compact, generate_metrics
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -50,33 +50,7 @@ class haloHoops:
         """
         self.data['reg_results_c'] = pd.read_csv('{}RegularSeasonCompactResults.csv'.format(self.data_dir))
         # generate win percentage from compact reults
-        self.data['reg_results_c'].drop(['NumOT', 'WLoc'], axis=1, inplace=True)
-        self.data['reg_results_c']['ScoreGap'] = self.data['reg_results_c']['WScore'] - self.data['reg_results_c']['LScore']
-        num_win = self.data['reg_results_c'].groupby(['Season', 'WTeamID']).count()
-        num_win = num_win.reset_index()[['Season', 'WTeamID', 'DayNum']].rename(columns={"DayNum": "NumWins", "WTeamID": "TeamID"})
-        num_loss = self.data['reg_results_c'].groupby(['Season', 'LTeamID']).count()
-        num_loss = num_loss.reset_index()[['Season', 'LTeamID', 'DayNum']].rename(columns={"DayNum": "NumLosses", "LTeamID": "TeamID"})
-        gap_win = self.data['reg_results_c'].groupby(['Season', 'WTeamID']).mean().reset_index()
-        gap_win = gap_win[['Season', 'WTeamID', 'ScoreGap']].rename(columns={"ScoreGap": "GapWins", "WTeamID": "TeamID"})
-        gap_loss = self.data['reg_results_c'].groupby(['Season', 'LTeamID']).mean().reset_index()
-        gap_loss = gap_loss[['Season', 'LTeamID', 'ScoreGap']].rename(columns={"ScoreGap": "GapLosses", "LTeamID": "TeamID"})
-        df_features_season_w = self.data['reg_results_c'].groupby(['Season', 'WTeamID']).count().reset_index()[['Season', 'WTeamID']].rename(columns={"WTeamID": "TeamID"})
-        df_features_season_l = self.data['reg_results_c'].groupby(['Season', 'LTeamID']).count().reset_index()[['Season', 'LTeamID']].rename(columns={"LTeamID": "TeamID"})
-        self.df_team_reg = pd.concat([df_features_season_w, df_features_season_l], 0).drop_duplicates().sort_values(['Season', 'TeamID']).reset_index(drop=True)
-        self.df_team_reg = self.df_team_reg.merge(num_win, on=['Season', 'TeamID'], how='left')
-        self.df_team_reg = self.df_team_reg.merge(num_loss, on=['Season', 'TeamID'], how='left')
-        self.df_team_reg = self.df_team_reg.merge(gap_win, on=['Season', 'TeamID'], how='left')
-        self.df_team_reg = self.df_team_reg.merge(gap_loss, on=['Season', 'TeamID'], how='left')
-        self.df_team_reg.fillna(0, inplace=True)
-        # calculate using weighted average
-        self.df_team_reg['WinRatio'] = self.df_team_reg['NumWins'] / (self.df_team_reg['NumWins'] + self.df_team_reg['NumLosses'])
-        self.df_team_reg['GapAvg'] = (
-            (self.df_team_reg['NumWins'] * self.df_team_reg['GapWins'] -
-           self.df_team_reg['NumLosses'] * self.df_team_reg['GapLosses'])
-            / (self.df_team_reg['NumWins'] + self.df_team_reg['NumLosses'])
-        )
-        self.df_team_reg.drop(['NumWins', 'NumLosses', 'GapWins', 'GapLosses'], axis=1, inplace=True)
-
+        self.df_team_reg = generate_compact(self.data['reg_results_c'])
         self.data['reg_results'] = pd.read_csv('{}RegularSeasonDetailedResults.csv'.format(self.data_dir))
         self.data['seasons'] = pd.read_csv('{}Seasons.csv'.format(self.data_dir))
         self.data['seeds'] = pd.read_csv('{}NCAATourneySeeds.csv'.format(self.data_dir))
@@ -102,12 +76,20 @@ class haloHoops:
         df_train = self.data['t_games_compact'].copy()
         df_train = df_train.drop(['DayNum', 'WScore', 'LScore', 'WLoc', 'NumOT'], axis=1)
         #df_train = df_train[(df_train['Season'] > 2002) & (df_train['Season'] < 2016)]
-        df_train = df_train[df_train['Season'] > 2002]
+        if not self.w:
+            df_train = df_train[df_train['Season'] > 2002]
+        else:
+            df_train = df_train[df_train['Season'] > 2010] # women's regular season data not available prior to 2010
         df_train_1 = df_train.copy()
         df_train['Result'] = 1
         df_train = df_train.rename(index=str, columns={"WTeamID": "TeamID_1", "LTeamID": "TeamID_2"})
+        # Join metrics
+        df_train = df_train.merge(self.df_metrics, left_on=['Season', 'TeamID_1'], right_on=['Season', 'WTeamID'], how='left')
+        df_train = df_train.merge(self.df_metrics, left_on=['Season', 'TeamID_2'], right_on=['Season', 'WTeamID'], how='left', suffixes=[None, 'B'])
         df_train_1['Result'] = 0
         df_train_1 = df_train_1.rename(index=str, columns={"WTeamID": "TeamID_2", "LTeamID": "TeamID_1"})
+        df_train_1 = df_train_1.merge(self.df_metrics, left_on=['Season', 'TeamID_2'], right_on=['Season', 'WTeamID'], how='left')
+        df_train_1 = df_train_1.merge(self.df_metrics, left_on=['Season', 'TeamID_1'], right_on=['Season', 'WTeamID'], how='left', suffixes=[None, 'B'])
         df_train = pd.concat([df_train, df_train_1], sort=False, ignore_index=True)
         if not self.w:
             df_train['MaxWeek'] = df_train['Season'].apply(lambda x: join_week[int(x)])
@@ -120,6 +102,7 @@ class haloHoops:
                                   left_on=['Season', 'MaxWeek', 'TeamID_2'],
                                   right_on=['Season', 'RankingDayNum', 'TeamID'],
                                   how='left')['OrdinalRank']
+            df_train['dkpom'] = df_train['t1_kpom'] - df_train['t2_kpom']
         df_train['t1_seed'] = df_train.merge(self.data['seeds'],
                                            left_on=['Season', 'TeamID_1'],
                                            right_on=['Season', 'TeamID'],
@@ -145,6 +128,23 @@ class haloHoops:
                                            right_on=['Season', 'TeamID'],
                                            how='left')['GapAvg']
 
+        # Calculate margins
+        df_train['dPossessions'] = df_train['Possessions'] - df_train['PossessionsB']
+        df_train['dPtsPerPoss'] = df_train['PtsPerPoss'] - df_train['PtsPerPossB']
+        df_train['dEffectiveFGPct'] = df_train['EffectiveFGPct'] - df_train['EffectiveFGPctB']
+        df_train['dAssistRate'] = df_train['AssistRate'] - df_train['AssistRateB']
+        df_train['dOReboundPct'] = df_train['OReboundPct'] - df_train['OReboundPctB']
+        df_train['dDReboundPct'] = df_train['DReboundPct'] - df_train['DReboundPctB']
+        df_train['dATORatio'] = df_train['ATORatio'] - df_train['ATORatioB']
+        df_train['dTORate'] = df_train['TORate'] - df_train['TORateB']
+        df_train['dBArcPct'] = df_train['BArcPct'] - df_train['BArcPctB']
+        df_train['dFTRate'] = df_train['FTRate'] - df_train['FTRateB']
+        df_train['dBlockFoul'] = df_train['BlockFoul'] - df_train['BlockFoulB']
+        df_train['dStealFoul'] = df_train['StealFoul'] - df_train['StealFoulB']
+        df_train['dseed'] = df_train['t1_seed'] - df_train['t2_seed']
+        df_train['dWavg'] = df_train['t1_Wavg'] - df_train['t2_Wavg']
+        df_train['dmargin'] = df_train['t1_margin'] - df_train['t2_margin']
+
         # trim down further if in phase 1 of comp.
         if self.phase == 1:
             df_train = df_train[df_train['Season'] < 2016]
@@ -156,6 +156,9 @@ class haloHoops:
         df_test['Season'] = self.submission['ID'].apply(lambda x: x[0:4]).astype(int)
         df_test['t1_id'] = self.submission['ID'].apply(lambda x: x[5:9]).astype(int)
         df_test['t2_id'] = self.submission['ID'].apply(lambda x: x[10::]).astype(int)
+        # merge metrics for each team ID
+        df_test = df_test.merge(self.df_metrics, left_on=['Season', 't1_id'], right_on=['Season', 'WTeamID'], how='left')
+        df_test = df_test.merge(self.df_metrics, left_on=['Season', 't2_id'], right_on=['Season', 'WTeamID'], how='left', suffixes=[None, 'B'])
         # join max week to dataframe
         if not self.w:
             df_test['MaxWeek'] = df_test['Season'].apply(lambda x: join_week[int(x)])
@@ -167,6 +170,7 @@ class haloHoops:
                           left_on=['Season', 't2_id', 'MaxWeek'],
                           right_on=['Season', 'TeamID', 'RankingDayNum'],
                           how='left', validate='m:1')['OrdinalRank']
+            df_test['dkpom'] = df_test['t1_kpom'] - df_test['t2_kpom']
         df_test['t1_seed'] = df_test.merge(self.data['seeds'],
                                            left_on=['Season', 't1_id'],
                                            right_on=['Season', 'TeamID'],
@@ -191,6 +195,24 @@ class haloHoops:
                                            left_on=['Season', 't2_id'],
                                            right_on=['Season', 'TeamID'],
                                            how='left')['GapAvg']
+
+        # Calculate margins
+        df_test['dPossessions'] = df_test['Possessions'] - df_test['PossessionsB']
+        df_test['dPtsPerPoss'] = df_test['PtsPerPoss'] - df_test['PtsPerPossB']
+        df_test['dEffectiveFGPct'] = df_test['EffectiveFGPct'] - df_test['EffectiveFGPctB']
+        df_test['dAssistRate'] = df_test['AssistRate'] - df_test['AssistRateB']
+        df_test['dOReboundPct'] = df_test['OReboundPct'] - df_test['OReboundPctB']
+        df_test['dDReboundPct'] = df_test['DReboundPct'] - df_test['DReboundPctB']
+        df_test['dATORatio'] = df_test['ATORatio'] - df_test['ATORatioB']
+        df_test['dTORate'] = df_test['TORate'] - df_test['TORateB']
+        df_test['dBArcPct'] = df_test['BArcPct'] - df_test['BArcPctB']
+        df_test['dFTRate'] = df_test['FTRate'] - df_test['FTRateB']
+        df_test['dBlockFoul'] = df_test['BlockFoul'] - df_test['BlockFoulB']
+        df_test['dStealFoul'] = df_test['StealFoul'] - df_test['StealFoulB']
+        df_test['dseed'] = df_test['t1_seed'] - df_test['t2_seed']
+        df_test['dWavg'] = df_test['t1_Wavg'] - df_test['t2_Wavg']
+        df_test['dmargin'] = df_test['t1_margin'] - df_test['t2_margin']
+
         self.test_data = df_test
 
     def train_model(self):
@@ -200,15 +222,18 @@ class haloHoops:
         Basic logistic regression to start us off.
         """
         if not self.w:
-            f_cols = ['Season', 't1_kpom', 't2_kpom', 't1_seed', 't1_Wavg', 't1_margin',
-                      't2_seed', 't2_Wavg', 't2_margin']
+            f_cols = ['dPossessions', 'dPtsPerPoss', 'dEffectiveFGPct', 'dAssistRate',
+                      'dOReboundPct', 'dDReboundPct', 'dATORatio', 'dTORate', 'dBArcPct',
+                      'dFTRate', 'dBlockFoul', 'dStealFoul', 'dseed', 'dWavg', 'dmargin',
+                      'dkpom']
             d_cols = ['MaxWeek', 'Result', 'TeamID_1', 'TeamID_2']
         else:
-            f_cols = ['Season', 't1_seed', 't1_Wavg', 't1_margin',
-                      't2_seed', 't2_Wavg', 't2_margin']
+            f_cols = ['dPossessions', 'dPtsPerPoss', 'dEffectiveFGPct', 'dAssistRate',
+                      'dOReboundPct', 'dDReboundPct', 'dATORatio', 'dTORate', 'dBArcPct',
+                      'dFTRate', 'dBlockFoul', 'dStealFoul', 'dseed', 'dWavg', 'dmargin']
             d_cols = ['Result', 'TeamID_1', 'TeamID_2']
         y = self.df_train['Result']
-        X = self.df_train.drop(d_cols, axis=1)
+        X = self.df_train[f_cols]
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         # get probs for test set
@@ -222,7 +247,6 @@ class haloHoops:
         self.test_preds = cm.predict_proba(X_test_scaled)
 
         print("Baseline logistic model trained, predictions made...")
-        print("Baseline log-loss score of {}".format(0.56336))
 
     def create_sub(self, filename):
         """

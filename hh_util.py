@@ -10,6 +10,43 @@ def weighted_metric(metric, df):
     weighted_df = ((df[f'W{metric}'].mul(df['NumWins']) + df[f'L{metric}'].mul(df['NumLosses'])) / (df['NumWins'] + df['NumLosses']))
     return(weighted_df)
 
+def generate_compact(df_com):
+    """
+    Generate win percentage and scoring margins.
+
+    parameters
+    ----------
+    df_com: (pandas dataframe)
+        regular season compact results
+    """
+    df_com.drop(['NumOT', 'WLoc'], axis=1, inplace=True)
+    df_com['ScoreGap'] = df_com['WScore'] - df_com['LScore']
+    num_win = df_com.groupby(['Season', 'WTeamID']).count()
+    num_win = num_win.reset_index()[['Season', 'WTeamID', 'DayNum']].rename(columns={"DayNum": "NumWins", "WTeamID": "TeamID"})
+    num_loss = df_com.groupby(['Season', 'LTeamID']).count()
+    num_loss = num_loss.reset_index()[['Season', 'LTeamID', 'DayNum']].rename(columns={"DayNum": "NumLosses", "LTeamID": "TeamID"})
+    gap_win = df_com.groupby(['Season', 'WTeamID']).mean().reset_index()
+    gap_win = gap_win[['Season', 'WTeamID', 'ScoreGap']].rename(columns={"ScoreGap": "GapWins", "WTeamID": "TeamID"})
+    gap_loss = df_com.groupby(['Season', 'LTeamID']).mean().reset_index()
+    gap_loss = gap_loss[['Season', 'LTeamID', 'ScoreGap']].rename(columns={"ScoreGap": "GapLosses", "LTeamID": "TeamID"})
+    df_features_season_w = df_com.groupby(['Season', 'WTeamID']).count().reset_index()[['Season', 'WTeamID']].rename(columns={"WTeamID": "TeamID"})
+    df_features_season_l = df_com.groupby(['Season', 'LTeamID']).count().reset_index()[['Season', 'LTeamID']].rename(columns={"LTeamID": "TeamID"})
+    df_out = pd.concat([df_features_season_w, df_features_season_l], 0).drop_duplicates().sort_values(['Season', 'TeamID']).reset_index(drop=True)
+    df_out = df_out.merge(num_win, on=['Season', 'TeamID'], how='left')
+    df_out = df_out.merge(num_loss, on=['Season', 'TeamID'], how='left')
+    df_out = df_out.merge(gap_win, on=['Season', 'TeamID'], how='left')
+    df_out = df_out.merge(gap_loss, on=['Season', 'TeamID'], how='left')
+    df_out.fillna(0, inplace=True)
+    # calculate using weighted average
+    df_out['WinRatio'] = df_out['NumWins'] / (df_out['NumWins'] + df_out['NumLosses'])
+    df_out['GapAvg'] = (
+        (df_out['NumWins'] * df_out['GapWins'] -
+       df_out['NumLosses'] * df_out['GapLosses'])
+        / (df_out['NumWins'] + df_out['NumLosses'])
+    )
+    df_out.drop(['NumWins', 'NumLosses', 'GapWins', 'GapLosses'], axis=1, inplace=True)
+    return(df_out)
+
 def generate_metrics(df_reg):
     """
     Generate regular season statistics from detailed results file.
