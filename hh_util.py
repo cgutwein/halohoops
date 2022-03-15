@@ -2,6 +2,8 @@
 Utility functions for halo hoops.
 """
 
+from tkinter.tix import DirSelectBox
+from numpy import result_type
 import pandas as pd
 
 def weighted_metric(metric, df):
@@ -59,6 +61,7 @@ def generate_metrics(df_reg):
     # adding sabermetrics per kaggle notebook
     df_reg.drop(['NumOT', 'WLoc'], axis=1, inplace=True)
     df_reg['ScoreMargin'] = df_reg['WScore'] - df_reg['LScore']
+    factor, vop, drbp, pf, fta, ftm = calculate_efficiency_constants(df_reg)
 
     num_win = df_reg.groupby(['Season', 'WTeamID']).count()
     num_win = num_win.reset_index()[['Season', 'WTeamID', 'DayNum']].rename(columns={"DayNum": "NumWins", "WTeamID": "TeamID"}).fillna(0)
@@ -111,6 +114,11 @@ def generate_metrics(df_reg):
     # Points Per Possession
     sabermetrics['WPtsPerPoss'] = df_reg['WScore'] / df_reg['WPossessions']
     sabermetrics['LPtsPerPoss'] = df_reg['LScore'] / df_reg['LPossessions']
+    
+    # True Shooting Percentage
+    sabermetrics['WTShootingPct'] = df_reg['WScore'] / (2 * (df_reg['WFGA'] + .475 * df_reg['WFTA']))
+    sabermetrics['LTShootingPct'] = df_reg['LScore'] / (2 * (df_reg['LFGA'] + .475 * df_reg['LFTA']))
+    
     # Effective Field Goal Percentage
     sabermetrics['WEffectiveFGPct'] = ((df_reg['WScore'] - df_reg['WFTM']) / 2) / df_reg['WFGA']
     sabermetrics['LEffectiveFGPct'] = ((df_reg['LScore'] - df_reg['LFTM']) / 2) / df_reg['LFGA']
@@ -149,6 +157,10 @@ def generate_metrics(df_reg):
     # Steal to Foul Percentage
     sabermetrics['WStealFoul'] = df_reg['WStl'] / (df_reg['WPF'] + df_reg['WStl'])
     sabermetrics['LStealFoul'] = df_reg['LStl'] / (df_reg['LPF'] + df_reg['LStl'])
+    
+    # Team total PER (Player Efficiency)
+    #sabermetrics['WTeamPER'] = df_reg.apply(lambda row: row['WFGM3'] - ((row['WPF'] * ftm[ftm['Season'] == row['Season']][0])/pf[pf['Season'] == row['Season']][0]) + (row['WFTA'] / 2 * (2 - (row['WAst'] / 3 * row['WFGM']))) + (row['WFGM'] * (2 - (factor[factor['Season'] == row['Season']][0] * row['WAst']) / row['WFGM'])) + (2 * row['WAst'] / 3) + vop[vop['Season'] == row['Season']][0] * (drbp[drbp['Season'] == row['Season']][0] * (2 * row['WOR'] + row['WBlk'] - 0.2464 * (row['WFTA'] - row['WFTM']) - (row['WFGA'] - row['WFGM']) - (row['WOR'] + row['WDR'])) + ((0.44 * fta[fta['Season'] == row['Season']][0] * row['WPF']) / pf[pf['Season'] == row['Season']][0]) - (row['WTO'] + row['WOR']) + row['WStl'] + row['WOR'] + row['WDR'] - (0.1936 * (row['WFTA'] - row['WFTM']))), axis=1, result_type='reduce')
+    #sabermetrics['LTeamPER'] = df_reg['LFGM3'] - ((df_reg['LPF'] * ftm)/pf) + (df_reg['LFTA'] / 2 * (2 - (df_reg['LAst'] / 3 * df_reg['LFGM']))) + (df_reg['LFGM'] * (2 - (factor * df_reg['LAst']) / df_reg['LFGM'])) + (2 * df_reg['LAst'] / 3) + vop * (drbp * (2 * df_reg['LOR'] + df_reg['LBlk'] - 0.2464 * (df_reg['LFTA'] - df_reg['LFTM']) - (df_reg['LFGA'] - df_reg['LFGM']) - (df_reg['LOR'] + df_reg['LDR'])) + ((0.44 * fta * df_reg['LPF']) / pf) - (df_reg['LTO'] + df_reg['LOR']) + df_reg['LStl'] + df_reg['LOR'] + df_reg['LDR'] - (0.1936 * (df_reg['LFTA'] - df_reg['LFTM'])))
 
     winning_columns = sabermetrics[[col for col in sabermetrics.columns if col[0] == 'W']]
     losing_columns = sabermetrics[[col for col in sabermetrics.columns if col[0] == 'L']]
@@ -185,7 +197,7 @@ def generate_metrics(df_reg):
     combined_df.fillna(0, inplace=True)
     #combined_df.set_index(['Season', 'WTeamID'], inplace=True)
 
-    metrics_list = ['Possessions', 'PtsPerPoss', 'EffectiveFGPct', 'AssistRate', 'OReboundPct', 'DReboundPct', 'ATORatio', 'TORate', 'BArcPct', 'FTRate', 'BlockFoul', 'StealFoul']
+    metrics_list = ['Possessions', 'PtsPerPoss', 'TrueShootingPct', 'EffectiveFGPct', 'AssistRate', 'OReboundPct', 'DReboundPct', 'ATORatio', 'TORate', 'BArcPct', 'FTRate', 'BlockFoul', 'StealFoul', 'TeamPER']
     season_sabermetrics = pd.concat([weighted_metric(metric, combined_df) for metric in metrics_list], axis=1)
     season_sabermetrics.columns=metrics_list
     season_sabermetrics.sort_index(inplace=True)
@@ -193,3 +205,33 @@ def generate_metrics(df_reg):
     season_sabermetrics.reset_index(inplace=True)
 
     return(season_sabermetrics, df_features_season)
+
+
+def calculate_efficiency_constants(df_reg):
+    yearly_df_reg = df_reg.groupby(['Season']).sum()
+    
+    # Scale Factor
+    factor = (2/3) - ((0.5 * ((yearly_df_reg['WAst'] + yearly_df_reg['LAst'])/(yearly_df_reg['WFGM'] + yearly_df_reg['LFGM'])))/(2 * ((yearly_df_reg['WFGM'] + yearly_df_reg['LFGM'])/(yearly_df_reg['WFTM'] + yearly_df_reg['LFTM']))))
+   
+    # Value of Possession
+    vop = (yearly_df_reg['WScore'] + yearly_df_reg['LScore']) / ((yearly_df_reg['WFGA'] + yearly_df_reg['LFGA']) - (yearly_df_reg['WOR'] + yearly_df_reg['LOR']) + (yearly_df_reg['WTO'] + yearly_df_reg['LTO']) + 0.44 * (yearly_df_reg['WFTA'] + yearly_df_reg['LFTA']))
+    
+    # Def Rebound %
+    drbp = (yearly_df_reg['WDR'] + yearly_df_reg['LDR']) / ((yearly_df_reg['WOR'] + yearly_df_reg['LOR']) + (yearly_df_reg['WDR'] + yearly_df_reg['LDR']))
+    
+    # League total fouls
+    pf = yearly_df_reg['WPF'] + yearly_df_reg['LPF']
+    
+    # League Free Throw Attempts
+    fta = yearly_df_reg['WFTA'] + yearly_df_reg['LFTA']
+    
+    # League Free Throws Made
+    ftm = yearly_df_reg['WFTM'] + yearly_df_reg['LFTM']
+    
+    factor = factor.reset_index()
+    vop = vop.reset_index()
+    drbp = drbp.reset_index()
+    pf = pf.reset_index()
+    fta = fta.reset_index()
+    ftm = ftm.reset_index()
+    return factor, vop, drbp, pf, fta, ftm
