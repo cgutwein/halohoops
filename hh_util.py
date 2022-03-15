@@ -119,6 +119,10 @@ def generate_metrics(df_reg):
     sabermetrics['WTShootingPct'] = df_reg['WScore'] / (2 * (df_reg['WFGA'] + .475 * df_reg['WFTA']))
     sabermetrics['LTShootingPct'] = df_reg['LScore'] / (2 * (df_reg['LFGA'] + .475 * df_reg['LFTA']))
     
+    # Possesion Value - Value of Possession by year * # Possessions
+    sabermetrics['WPossessionVal'] = df_reg.apply(lambda row: row['WPossessions'] * vop[row['Season']], axis=1)
+    sabermetrics['LPossessionVal'] = df_reg.apply(lambda row: row['LPossessions'] * vop[row['Season']], axis=1)
+    
     # Effective Field Goal Percentage
     sabermetrics['WEffectiveFGPct'] = ((df_reg['WScore'] - df_reg['WFTM']) / 2) / df_reg['WFGA']
     sabermetrics['LEffectiveFGPct'] = ((df_reg['LScore'] - df_reg['LFTM']) / 2) / df_reg['LFGA']
@@ -229,7 +233,7 @@ def calculate_efficiency_constants(df_reg):
     ftm = yearly_df_reg['WFTM'] + yearly_df_reg['LFTM']
     
     factor = factor.reset_index()
-    vop = vop.reset_index()
+    vop = vop.to_dict()
     drbp = drbp.reset_index()
     pf = pf.reset_index()
     fta = fta.reset_index()
