@@ -197,7 +197,7 @@ def generate_metrics(df_reg):
     combined_df.fillna(0, inplace=True)
     #combined_df.set_index(['Season', 'WTeamID'], inplace=True)
 
-    metrics_list = ['Possessions', 'PtsPerPoss', 'TrueShootingPct', 'EffectiveFGPct', 'AssistRate', 'OReboundPct', 'DReboundPct', 'ATORatio', 'TORate', 'BArcPct', 'FTRate', 'BlockFoul', 'StealFoul', 'TeamPER']
+    metrics_list = ['Possessions', 'PtsPerPoss', 'TShootingPct', 'EffectiveFGPct', 'AssistRate', 'OReboundPct', 'DReboundPct', 'ATORatio', 'TORate', 'BArcPct', 'FTRate', 'BlockFoul', 'StealFoul']
     season_sabermetrics = pd.concat([weighted_metric(metric, combined_df) for metric in metrics_list], axis=1)
     season_sabermetrics.columns=metrics_list
     season_sabermetrics.sort_index(inplace=True)
